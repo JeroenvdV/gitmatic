@@ -1,157 +1,161 @@
-# AutoGit-o-Matic
+# gitmatic
 
 <p align="center">
-  <img src="logo.jpg" alt="AutoGit-o-Matic Logo" width="500"/>
+  <img src="logo.jpg" alt="gitmatic Logo" width="500"/>
 </p>
 
 <p align="center">
-  <strong>Automate Git operations across multiple repositories</strong>
+  <strong>Automate safe Git maintenance across multiple repositories</strong>
 </p>
 
-<p align="center">
-  <a href="#features">Features</a> •
-  <a href="#installation">Installation</a> •
-  <a href="#usage">Usage</a> •
-  <a href="#cron-setup">Cron Setup</a> •
-  <a href="#configuration">Configuration</a> •
-  <a href="#license">License</a>
-</p>
+## What it does
 
-## Features
+gitmatic is a Bash tool that scans one or more parent directories, discovers Git repositories (including worktrees), and performs configured maintenance operations:
 
-AutoGit-o-Matic is a Bash script that automates Git operations across multiple repositories. It helps you:
+- `FETCH` section: `git fetch --prune --tags`
+- `PULL` section: `git pull`
+- `SILENT_UPDATE` section: safe local tracking-branch updates **without checkout**
 
-- **Pull or fetch updates** from multiple repositories with a single command
-- **Scan directories** for Git repositories automatically
-- **Log operations** in both TXT and JSON formats
-- **Dry-run** capability to simulate operations without making actual changes
-- **Configurable paths** via an INI file
+## Why `SILENT_UPDATE` exists
+
+`SILENT_UPDATE` is designed for users who want repository metadata updated in the background while they may be actively working in worktrees.
+
+Behavior:
+
+1. Fetch remote updates.
+2. Enumerate local branches that have an upstream.
+3. For each branch:
+   - Skip if currently checked out in any worktree.
+   - Skip if fast-forward is not possible.
+   - Otherwise fast-forward local branch ref to upstream **without checkout**.
+
+See concise mechanism docs here:
+- [`docs/silent-update.md`](docs/silent-update.md)
 
 ## Installation
 
-1. Clone the repository:
+### macOS (automated)
+
+Install script + config scaffold + optional launchd helper:
+
 ```bash
-git clone https://github.com/yourusername/AutoGit-o-Matic.git
+./scripts/install-macos.sh
 ```
 
-2. Make the script executable:
+Install a launch agent that runs every 15 minutes:
+
 ```bash
-chmod +x autogit-o-matic.sh
+./scripts/install-launchd.sh
 ```
 
-3. Create your configuration file (you can copy and modify the example one):
+### Generic manual setup
+
+1. Clone repository.
+2. Make scripts executable:
+
 ```bash
-cp autogit-o-matic.ini.example autogit-o-matic.ini
+chmod +x gitmatic.sh scripts/*.sh tests/*.sh
+```
+
+3. Copy config template:
+
+```bash
+cp gitmatic.ini.example gitmatic.ini
 ```
 
 ## Usage
 
-Run the script with:
+```bash
+./gitmatic.sh [OPTIONS]
+```
+
+Options:
+
+- `--config FILE` - Path to config file (default `gitmatic.ini`)
+- `--dry-run` - Print actions without changing repositories
+- `--verbose` / `-v` - Extra progress output
+- `--log-file FILE` - Append logs to this file
+- `--help` - Show help
+
+Examples:
 
 ```bash
-./autogit-o-matic.sh [OPTIONS]
+./gitmatic.sh --config ./gitmatic.ini --log-file ./gitmatic.log
+./gitmatic.sh --dry-run --verbose
 ```
-
-### Options
-
-- `--config FILE` - Path to the configuration file (default: autogit-o-matic.ini)
-- `--dry-run` - Simulate operations without actually executing Git commands
-- `--verbose, -v` - Display more detailed information about operations
-- `--log-file FILE` - Write logs to the specified file
-- `--help` - Display help message and exit
-
-### Example
-
-```bash
-./autogit-o-matic.sh --verbose --log-file autogit.log
-```
-
-You can also specify the full path to the script and configuration file:
-
-```bash
-/path/to/autogit-o-matic.sh --config /path/to/autogit-o-matic.ini --log-file /path/to/log/autogit.log
-```
-
-For example:
-
-```bash
-/home/mok/git/AutoGit-o-Matic/autogit-o-matic.sh --config /home/mok/git/AutoGit-o-Matic/autogit-o-matic.ini --log-file ~/RAMDISC/autogit.log
-```
-
-**Note:** If you don't specify a configuration file with `--config`, the script will automatically look for `autogit-o-matic.ini` in the current directory. If it doesn't find it there, it will look for the config file in the same directory as the script itself.
-
-## Cron Setup
-
-To automate Git operations on a schedule, you can set up a cron job:
-
-1. Open your crontab file:
-```bash
-crontab -e
-```
-
-2. Add a line to run the script at your desired schedule. For example, to run it every hour:
-```
-0 * * * * /path/to/autogit-o-matic.sh --log-file /path/to/autogit.log
-```
-
-3. For daily runs at 8:30 AM:
-```
-30 8 * * * /path/to/autogit-o-matic.sh --log-file /path/to/autogit.log
-```
-
-4. To run it every 15 minutes:
-```
-*/15 * * * * /path/to/autogit-o-matic.sh --log-file /path/to/autogit.log
-```
-
-Make sure to use absolute paths in your cron job to avoid any path-related issues.
 
 ## Configuration
 
-The configuration file (`autogit-o-matic.ini`) uses an INI format:
+The file is INI-like. Each operation section accepts repository paths or parent paths to scan recursively.
 
 ```ini
 [SETTINGS]
-log_format = JSON  # Can be TXT or JSON
-
-[PULL]
-# Repositories to pull from
-/home/user/git/repo1/
-/home/user/git/repo2/
+log_format = TXT
 
 [FETCH]
-# Repositories to fetch from
-/home/user/git/repo3/
-/home/user/git/repo4/
+path = /Users/you/src
+
+[PULL]
+# use cautiously if you actively edit repos
+path = /Users/you/archived-projects
+
+[SILENT_UPDATE]
+path = /Users/you/src
 ```
 
-You can specify either individual repositories or parent directories containing Git repositories.
+Notes:
+
+- Relative paths are resolved relative to the configuration file location.
+- The scanner includes repos where `.git` is a directory **or** a file (worktree-linked repos).
+- Worktree-checked-out branches are logged as skipped in `SILENT_UPDATE`.
+- If no operation sections are configured, gitmatic defaults to `SILENT_UPDATE` using the configuration file directory as the scan root.
+
+## Scheduling
+
+### macOS `launchd` (recommended)
+
+Install:
+
+```bash
+./scripts/install-launchd.sh \
+  --script "$HOME/.local/share/gitmatic/gitmatic.sh" \
+  --config "$HOME/.local/share/gitmatic/gitmatic.ini" \
+  --interval-seconds 900
+```
+
+Uninstall:
+
+```bash
+./scripts/uninstall-launchd.sh
+```
+
+### cron
+
+Run every 15 minutes:
+
+```cron
+*/15 * * * * /absolute/path/to/gitmatic.sh --config /absolute/path/to/gitmatic.ini --log-file /absolute/path/to/gitmatic.log
+```
+
+## Tests
+
+Lightweight, isolated tests create temporary repositories and bare remotes locally (no network):
+
+```bash
+./tests/run.sh
+```
+
+Coverage currently includes:
+
+- fast-forward update of non-checked-out tracking branch
+- skip on non-fast-forward/diverged branch
+- skip when branch is checked out in another worktree
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+GNU GPL v3.0 - see [LICENSE](LICENSE).
 
-```
-AutoGit-o-Matic - Automate Git operations across multiple repositories
-Copyright (C) 2025 Mateusz Okulanis
+## Credits
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-```
-
-## Author
-
-**Mateusz Okulanis**  
-Email: FPGArtktic@outlook.com
-
----
+- Original project and author: **AutoGit-o-Matic** by **Mateusz Okulanis** (`FPGArtktic@outlook.com`)
+- This fork (`gitmatic`) keeps original attribution and license terms.
