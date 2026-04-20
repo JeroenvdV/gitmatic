@@ -32,6 +32,15 @@ assert_equals() {
     fi
 }
 
+assert_not_contains() {
+    local file="$1"
+    local unexpected="$2"
+    if grep -Fq "$unexpected" "$file"; then
+        echo "ASSERTION FAILED: did not expect '$unexpected' in $file"
+        exit 1
+    fi
+}
+
 assert_json_log_contains() {
     local file="$1"
     local type="$2"
@@ -75,6 +84,13 @@ new_repo_fixture() {
     git_quiet -C "$local_repo" fetch --prune --tags
 }
 
+new_plain_repo() {
+    local repo_path="$1"
+
+    mkdir -p "$repo_path"
+    git_quiet init "$repo_path"
+}
+
 advance_remote_branch() {
     local fixture_name="$1"
     local branch="$2"
@@ -105,6 +121,14 @@ path = $repo_root
 EOF
 
     "$AUTOGIT_SCRIPT" --config "$config_file" --log-file "$log_file" >/dev/null
+}
+
+run_autogit_with_config() {
+    local config_file="$1"
+    local log_file="$2"
+    shift 2
+
+    "$AUTOGIT_SCRIPT" --config "$config_file" --log-file "$log_file" "$@" >/dev/null
 }
 
 test_fast_forward_updates_non_checked_out_branch() {
@@ -176,6 +200,94 @@ test_diverged_branch_is_skipped() {
     assert_json_log_contains "$log_file" "WARN" "$local_repo:feature" "SKIPPED" "Skipped because fast-forward is not possible (branch diverged or ahead)"
 }
 
+test_discovery_supports_multiple_includes_excludes_and_max_depth() {
+    local fixture_name="discovery-rules"
+    local fixture_dir="$TMPDIR_ROOT/$fixture_name"
+    local primary_root="$fixture_dir/root-one"
+    local secondary_root="$fixture_dir/root-two"
+    local included_repo="$primary_root/included-repo"
+    local excluded_parent="$primary_root/excluded-group"
+    local excluded_repo="$excluded_parent/excluded-repo"
+    local explicit_repo="$excluded_parent/explicit-repo"
+    local deep_repo="$primary_root/deep-parent/deep-repo"
+    local wildcard_repo="$primary_root/team-skipme/project-repo"
+    local secondary_repo="$secondary_root/another-repo"
+    local log_file="$fixture_dir/run.log"
+    local config_file="$fixture_dir/config.ini"
+
+    new_plain_repo "$included_repo"
+    mkdir -p "$excluded_parent"
+    new_plain_repo "$excluded_repo"
+    new_plain_repo "$explicit_repo"
+    new_plain_repo "$deep_repo"
+    new_plain_repo "$wildcard_repo"
+    new_plain_repo "$secondary_repo"
+
+    cat > "$config_file" <<EOF
+[FETCH]
+include_path = $primary_root
+include_path = $secondary_root
+include_path = $explicit_repo
+exclude_path = $excluded_parent
+exclude_path = *skipme*
+max_depth = 1
+EOF
+
+    run_autogit_with_config "$config_file" "$log_file" --dry-run
+
+    assert_json_log_contains "$log_file" "FETCH" "$included_repo" "DRY-RUN"
+    assert_json_log_contains "$log_file" "FETCH" "$secondary_repo" "DRY-RUN"
+    assert_json_log_contains "$log_file" "FETCH" "$explicit_repo" "DRY-RUN"
+    assert_not_contains "$log_file" "\"path\":\"$excluded_repo\""
+    assert_not_contains "$log_file" "\"path\":\"$deep_repo\""
+    assert_not_contains "$log_file" "\"path\":\"$wildcard_repo\""
+}
+
+test_discovery_stops_descending_after_repo_root() {
+    local fixture_name="nested-repo-prune"
+    local fixture_dir="$TMPDIR_ROOT/$fixture_name"
+    local scan_root="$fixture_dir/scan-root"
+    local parent_repo="$scan_root/parent-repo"
+    local nested_repo="$parent_repo/nested-repo"
+    local log_file="$fixture_dir/run.log"
+    local config_file="$fixture_dir/config.ini"
+
+    new_plain_repo "$parent_repo"
+    new_plain_repo "$nested_repo"
+
+    cat > "$config_file" <<EOF
+[FETCH]
+include_path = $scan_root
+EOF
+
+    run_autogit_with_config "$config_file" "$log_file" --dry-run
+
+    assert_json_log_contains "$log_file" "FETCH" "$parent_repo" "DRY-RUN"
+    assert_not_contains "$log_file" "\"path\":\"$nested_repo\""
+}
+
+test_discovery_detects_linked_worktrees() {
+    local fixture_name="worktree-discovery"
+    local scan_root="$TMPDIR_ROOT/$fixture_name"
+    local local_repo="$scan_root/local"
+    local worktree_repo="$scan_root/worktree-feature"
+    local log_file="$scan_root/run.log"
+    local config_file="$scan_root/config.ini"
+
+    new_repo_fixture "$fixture_name"
+    git_quiet -C "$local_repo" worktree add "$worktree_repo" feature
+
+    cat > "$config_file" <<EOF
+[FETCH]
+include_path = $scan_root
+EOF
+
+    run_autogit_with_config "$config_file" "$log_file" --dry-run
+
+    assert_json_log_contains "$log_file" "FETCH" "$local_repo" "DRY-RUN"
+    assert_json_log_contains "$log_file" "FETCH" "$worktree_repo" "DRY-RUN"
+}
+
 main() {
     command -v git >/dev/null 2>&1 || {
         echo "git is required for tests"
@@ -185,6 +297,9 @@ main() {
     test_fast_forward_updates_non_checked_out_branch
     test_checked_out_worktree_branch_is_skipped
     test_diverged_branch_is_skipped
+    test_discovery_supports_multiple_includes_excludes_and_max_depth
+    test_discovery_stops_descending_after_repo_root
+    test_discovery_detects_linked_worktrees
     echo "All tests passed"
 }
 

@@ -20,6 +20,7 @@ LOG_FILE=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR=""
 GIT_LAST_OUTPUT=""
+SECTION_SEEN_REPOS=""
 
 print_usage() {
     cat <<'EOF'
@@ -155,7 +156,35 @@ resolve_config_path() {
     esac
 }
 
-extract_section_paths() {
+strip_trailing_slashes() {
+    local path="$1"
+
+    while [ "$path" != "/" ] && [ "${path%/}" != "$path" ]; do
+        path="${path%/}"
+    done
+
+    printf "%s\n" "$path"
+}
+
+path_has_glob_characters() {
+    [[ "$1" == *'*'* || "$1" == *'?'* || "$1" == *'['* ]]
+}
+
+resolve_exclude_pattern() {
+    local raw_path="$1"
+
+    if path_has_glob_characters "$raw_path"; then
+        case "$raw_path" in
+            /*) printf "%s\n" "$raw_path" ;;
+            *) printf "*/%s\n" "$raw_path" ;;
+        esac
+        return 0
+    fi
+
+    printf "%s\n" "$(strip_trailing_slashes "$(resolve_config_path "$raw_path")")"
+}
+
+extract_section_include_paths() {
     local section="$1"
     awk -v requested_section="$section" '
         BEGIN { in_section = 0 }
@@ -175,12 +204,17 @@ extract_section_paths() {
             if (line == "" || line ~ /^[#;]/) {
                 next
             }
-            if (line ~ /^path[[:space:]]*=/) {
-                sub(/^path[[:space:]]*=[[:space:]]*/, "", line)
-            }
             sub(/[[:space:]]*[#;].*$/, "", line)
             sub(/[[:space:]]+$/, "", line)
             if (line == "") {
+                next
+            }
+            if (line ~ /^(path|include|include_path)[[:space:]]*=/) {
+                sub(/^[^=]+=[[:space:]]*/, "", line)
+                print line
+                next
+            }
+            if (line ~ /^[[:alnum:]_.-]+[[:space:]]*=/) {
                 next
             }
             print line
@@ -188,28 +222,193 @@ extract_section_paths() {
     ' "$CONFIG_FILE"
 }
 
+extract_section_exclude_paths() {
+    local section="$1"
+    awk -v requested_section="$section" '
+        BEGIN { in_section = 0 }
+        /^\[[^]]+\]/ {
+            if ($0 == "[" requested_section "]") {
+                in_section = 1
+                next
+            }
+            if (in_section == 1) {
+                exit
+            }
+        }
+        in_section == 1 {
+            line = $0
+            sub(/^[[:space:]]+/, "", line)
+            sub(/[[:space:]]+$/, "", line)
+            if (line == "" || line ~ /^[#;]/) {
+                next
+            }
+            sub(/[[:space:]]*[#;].*$/, "", line)
+            sub(/[[:space:]]+$/, "", line)
+            if (line == "") {
+                next
+            }
+            if (line ~ /^(exclude|exclude_path)[[:space:]]*=/) {
+                sub(/^[^=]+=[[:space:]]*/, "", line)
+                print line
+            }
+        }
+    ' "$CONFIG_FILE"
+}
+
+extract_section_max_depth() {
+    local section="$1"
+    awk -v requested_section="$section" '
+        BEGIN { in_section = 0; value = "" }
+        /^\[[^]]+\]/ {
+            if ($0 == "[" requested_section "]") {
+                in_section = 1
+                next
+            }
+            if (in_section == 1) {
+                exit
+            }
+        }
+        in_section == 1 {
+            line = $0
+            sub(/^[[:space:]]+/, "", line)
+            sub(/[[:space:]]+$/, "", line)
+            if (line == "" || line ~ /^[#;]/) {
+                next
+            }
+            sub(/[[:space:]]*[#;].*$/, "", line)
+            sub(/[[:space:]]+$/, "", line)
+            if (line ~ /^max_depth[[:space:]]*=/) {
+                sub(/^max_depth[[:space:]]*=[[:space:]]*/, "", line)
+                value = line
+            }
+        }
+        END {
+            if (value != "") {
+                print value
+            }
+        }
+    ' "$CONFIG_FILE"
+}
+
+path_matches_pattern() {
+    local path="$1"
+    local pattern="$2"
+
+    if [[ "$path" == $pattern ]]; then
+        return 0
+    fi
+
+    if path_has_glob_characters "$pattern" && [[ "${path}/" == $pattern ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+path_is_excluded() {
+    local path="$1"
+    local exclude_patterns="$2"
+    local pattern
+
+    while IFS= read -r pattern; do
+        [ -z "$pattern" ] && continue
+        if path_matches_pattern "$path" "$pattern"; then
+            return 0
+        fi
+    done <<EOF
+$exclude_patterns
+EOF
+
+    return 1
+}
+
+repo_has_been_seen() {
+    local repo="$1"
+    local seen_repo
+
+    while IFS= read -r seen_repo; do
+        [ -z "$seen_repo" ] && continue
+        if [ "$seen_repo" = "$repo" ]; then
+            return 0
+        fi
+    done <<EOF
+$SECTION_SEEN_REPOS
+EOF
+
+    return 1
+}
+
+mark_repo_as_seen() {
+    local repo="$1"
+
+    if [ -z "$SECTION_SEEN_REPOS" ]; then
+        SECTION_SEEN_REPOS="$repo"
+    else
+        SECTION_SEEN_REPOS="${SECTION_SEEN_REPOS}
+$repo"
+    fi
+}
+
+list_child_directories() {
+    local base_path="$1"
+    local candidate
+
+    for candidate in "$base_path"/* "$base_path"/.[!.]* "$base_path"/..?*; do
+        [ -d "$candidate" ] || continue
+        [ -L "$candidate" ] && continue
+        if [ "$(basename "$candidate")" = ".git" ]; then
+            continue
+        fi
+        printf "%s\n" "$candidate"
+    done
+}
+
+scan_directory_for_repositories() {
+    local current_path="$1"
+    local include_root="$2"
+    local current_depth="$3"
+    local exclude_patterns="$4"
+    local max_depth="$5"
+    local child_path
+    local normalized_path
+
+    if [ ! -d "$current_path" ]; then
+        return 0
+    fi
+
+    normalized_path="$(strip_trailing_slashes "$current_path")"
+
+    if [ "$normalized_path" != "$include_root" ] && path_is_excluded "$normalized_path" "$exclude_patterns"; then
+        return 0
+    fi
+
+    if [ -e "$normalized_path/.git" ] && is_git_repository "$normalized_path"; then
+        printf "%s\n" "$normalized_path"
+        return 0
+    fi
+
+    if [ -n "$max_depth" ] && [ "$current_depth" -ge "$max_depth" ]; then
+        return 0
+    fi
+
+    while IFS= read -r child_path; do
+        [ -z "$child_path" ] && continue
+        scan_directory_for_repositories "$child_path" "$include_root" "$((current_depth + 1))" "$exclude_patterns" "$max_depth"
+    done < <(list_child_directories "$normalized_path")
+}
+
 scan_for_repositories() {
     local base_path="$1"
+    local exclude_patterns="${2:-}"
+    local max_depth="${3:-}"
+    local normalized_base_path
+
     if [ ! -d "$base_path" ]; then
         return 0
     fi
 
-    if is_git_repository "$base_path"; then
-        canonical_path "$base_path"
-        return 0
-    fi
-
-    # A git repository root always contains a ".git" entry:
-    # - normal repo: directory
-    # - linked worktree: file
-    find "$base_path" \( -type d -name .git -o -type f -name .git \) 2>/dev/null | \
-        while IFS= read -r git_entry; do
-            local repo_root
-            repo_root="${git_entry%/.git}"
-            if is_git_repository "$repo_root"; then
-                canonical_path "$repo_root"
-            fi
-        done | sort -u
+    normalized_base_path="$(strip_trailing_slashes "$(canonical_path "$base_path")")"
+    scan_directory_for_repositories "$normalized_base_path" "$normalized_base_path" 0 "$exclude_patterns" "$max_depth"
 }
 
 run_simple_operation() {
@@ -404,67 +603,94 @@ process_repo_with_operation() {
     esac
 }
 
+validate_include_path() {
+    local raw_path="$1"
+
+    if path_has_glob_characters "$raw_path"; then
+        echo "Error: include_path does not support wildcards: $raw_path"
+        exit 1
+    fi
+}
+
+validate_max_depth() {
+    local section="$1"
+    local max_depth="$2"
+
+    if [ -z "$max_depth" ]; then
+        return 0
+    fi
+
+    case "$max_depth" in
+        *[!0-9]*|'')
+            echo "Error: [$section] max_depth must be a non-negative integer"
+            exit 1
+            ;;
+    esac
+}
+
 process_operation_path() {
     local section="$1"
     local operation="$2"
     local path="$3"
-    local repos
+    local exclude_patterns="${4:-}"
+    local max_depth="${5:-}"
+    local found_repos=0
     local repo
 
     verbose_log "[$section] scanning path: $path"
-    repos="$(scan_for_repositories "$path")"
-    if [ -z "$repos" ]; then
-        log_warning "$path" "No repositories discovered under this path"
-        return 0
-    fi
 
     while IFS= read -r repo; do
         [ -z "$repo" ] && continue
+        found_repos=1
+        if repo_has_been_seen "$repo"; then
+            continue
+        fi
+        mark_repo_as_seen "$repo"
         process_repo_with_operation "$operation" "$repo"
-    done <<EOF
-$repos
-EOF
+    done < <(scan_for_repositories "$path" "$exclude_patterns" "$max_depth")
+
+    if [ "$found_repos" -eq 0 ]; then
+        log_warning "$path" "No repositories discovered under this path"
+    fi
 }
 
 process_operation_section() {
     local section="$1"
     local operation="$2"
     local found_any_paths=0
+    local exclude_patterns=""
+    local raw_exclude
+    local exclude_pattern
+    local max_depth
     local raw_path
     local path
+
+    max_depth="$(extract_section_max_depth "$section")"
+    validate_max_depth "$section" "$max_depth"
+
+    while IFS= read -r raw_exclude; do
+        [ -z "$raw_exclude" ] && continue
+        exclude_pattern="$(resolve_exclude_pattern "$raw_exclude")"
+        if [ -z "$exclude_patterns" ]; then
+            exclude_patterns="$exclude_pattern"
+        else
+            exclude_patterns="${exclude_patterns}
+$exclude_pattern"
+        fi
+    done < <(extract_section_exclude_paths "$section")
+
+    SECTION_SEEN_REPOS=""
 
     while IFS= read -r raw_path; do
         [ -z "$raw_path" ] && continue
         found_any_paths=1
-        path="$(resolve_config_path "$raw_path")"
-        process_operation_path "$section" "$operation" "$path"
-    done <<EOF
-$(extract_section_paths "$section")
-EOF
+        validate_include_path "$raw_path"
+        path="$(strip_trailing_slashes "$(resolve_config_path "$raw_path")")"
+        process_operation_path "$section" "$operation" "$path" "$exclude_patterns" "$max_depth"
+    done < <(extract_section_include_paths "$section")
 
     if [ "$found_any_paths" -eq 0 ]; then
         verbose_log "No entries configured for section [$section]"
-        return 1
-    fi
-    return 0
-}
-
-process_silent_update_section() {
-    local found_any_paths=0
-    local raw_path
-    local path
-
-    while IFS= read -r raw_path; do
-        [ -z "$raw_path" ] && continue
-        found_any_paths=1
-        path="$(resolve_config_path "$raw_path")"
-        process_operation_path "SILENT_UPDATE" "SILENT_UPDATE" "$path"
-    done <<EOF
-$(extract_section_paths "SILENT_UPDATE")
-EOF
-
-    if [ "$found_any_paths" -eq 0 ]; then
-        verbose_log "No entries configured for section [SILENT_UPDATE]"
         return 1
     fi
     return 0
@@ -532,9 +758,10 @@ main() {
 
     process_operation_section "FETCH" "FETCH" && any_configured=1 || true
     process_operation_section "PULL" "PULL" && any_configured=1 || true
-    process_silent_update_section && any_configured=1 || true
+    process_operation_section "SILENT_UPDATE" "SILENT_UPDATE" && any_configured=1 || true
 
     if [ "$any_configured" -eq 0 ]; then
+        SECTION_SEEN_REPOS=""
         log_operation "SILENT_UPDATE" "$CONFIG_DIR" "DEFAULT" \
             "No operation sections configured; defaulting to SILENT_UPDATE in config directory"
         process_operation_path "SILENT_UPDATE" "SILENT_UPDATE" "$CONFIG_DIR"

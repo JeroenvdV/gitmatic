@@ -4,6 +4,9 @@
 # Most users should start with [SILENT_UPDATE].
 # You do not need to use every section.
 # gitmatic writes JSON log lines to stdout and to --log-file when provided.
+# Repeat include_path to scan multiple roots.
+# exclude_path accepts exact paths or simple glob patterns such as *archive*.
+# Discovery stops when gitmatic finds a repo root; nested repos must be included explicitly.
 
 [SILENT_UPDATE]
 # Safest default for most people.
@@ -17,26 +20,34 @@
 #   - a single repository path
 #   - a parent directory to scan recursively for Git repositories
 #
-# Replace this example path with one of your own:
-path = /Users/yourname/code
+# Replace these example paths with your own:
+include_path = /Users/yourname/code
+# include_path = /Users/yourname/work
+# exclude_path = /Users/yourname/code/archive
+# exclude_path = *node_modules*
+# max_depth = 4
 
 [FETCH]
 # Use FETCH if you only want to download remote updates and tags.
 # This does not move local branches.
 #
 # Examples:
-# path = /Users/yourname/archive
-# /Users/yourname/another-parent-folder
+# include_path = /Users/yourname/archive
+# include_path = /Users/yourname/another-parent-folder
+# exclude_path = *vendor*
 
 [PULL]
 # Use PULL only if you explicitly want gitmatic to run normal `git pull`
 # in the matching repositories.
 #
 # Examples:
-# path = /Users/yourname/less-active-projects
-# /Users/yourname/some-single-repo
+# include_path = /Users/yourname/less-active-projects
+# include_path = /Users/yourname/some-single-repo
 
 # Notes:
 # - Comments can start with '#' or ';'
-# - Relative paths are resolved relative to this config file
-# - If a path is a parent directory, gitmatic scans it recursively
+# - include_path and path are equivalent; path is kept as a compatibility alias
+# - Relative include_path values are resolved relative to this config file
+# - Exact exclude_path values are resolved relative to this config file
+# - Wildcard exclude_path values match against the discovered absolute path
+# - max_depth counts directory levels below each include_path

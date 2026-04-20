@@ -54,7 +54,7 @@ The safest starting point for most people is `SILENT_UPDATE`:
 
 ```ini
 [SILENT_UPDATE]
-path = /Users/yourname/code
+include_path = /Users/yourname/code
 ```
 
 That tells gitmatic:
@@ -113,19 +113,28 @@ Use:
 
 ```ini
 [SILENT_UPDATE]
-path = /Users/yourname/code
+include_path = /Users/yourname/code
+include_path = /Users/yourname/work
+exclude_path = /Users/yourname/code/archive
+exclude_path = *node_modules*
+max_depth = 4
 
 [FETCH]
-path = /Users/yourname/archive
+include_path = /Users/yourname/archive
 ```
 
 Rules worth knowing:
 
-- each section can contain repo paths or parent directories
-- parent directories are scanned recursively for Git repos
-- relative paths are resolved relative to the config file location
+- each section can contain multiple `include_path` and `exclude_path` entries
+- `path = ...` still works as a compatibility alias for `include_path = ...`
+- exact `exclude_path` values are resolved relative to the config file location
+- wildcard `exclude_path` values use simple Bash-style glob matching against the discovered absolute path
+- `max_depth` limits how deep gitmatic descends below each include root
+- when gitmatic finds a repo root, it stops descending into that repo
+- nested repos are only discovered if you include them explicitly
 - if a branch is checked out in any worktree, `SILENT_UPDATE` skips it
 - if a branch cannot be fast-forwarded safely, `SILENT_UPDATE` skips it
+- gitmatic does not read repository `.gitignore` files during repo discovery
 - if you leave out all operation sections, gitmatic defaults to `SILENT_UPDATE` and scans the config file directory
 
 
