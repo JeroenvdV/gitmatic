@@ -8,29 +8,19 @@
   <strong>Keep many Git repositories up to date without manually visiting each one.</strong>
 </p>
 
-gitmatic is a Bash script that scans directories for Git repositories and then runs one of these maintenance actions:
+Gitmatic regularly updates your local git branches from the remote. It stays out of your way and saves you time when pulling.
 
+## Action mode choices
+
+- `SILENT_UPDATE` (default): safely fast-forward local tracking branches without checking them out
 - `FETCH`: `git fetch --prune --tags`
 - `PULL`: `git pull`
-- `SILENT_UPDATE`: safely fast-forward local tracking branches without checking them out
-
-If you are landing on this page and thinking "what do I actually do?", start with the macOS quick start below.
 
 ## Quick start for macOS
 
 This is the shortest path if you just want to use the tool.
 
 ### 1) Clone the repo
-
-```bash
-git clone https://github.com/JeroenvdV/gitmatic.git
-cd gitmatic
-```
-
-What this does:
-
-- downloads this repository onto your Mac
-- puts you in the project folder so the next commands work
 
 ### 2) Run the macOS install helper
 
@@ -40,9 +30,8 @@ What this does:
 
 What this does on your system:
 
-- creates `~/.local/share/gitmatic/` if it does not exist
-- copies `gitmatic.sh` there
-- makes that copied script executable
+- copies `gitmatic.sh` to `~/.local/share/gitmatic/`
+- makes the script executable
 - copies `gitmatic.ini.example` to `~/.local/share/gitmatic/gitmatic.ini` if you do not already have a config file there
 
 What it does **not** do:
@@ -56,10 +45,10 @@ What it does **not** do:
 Open this file in a text editor, for example:
 
 ```bash
-open -e ~/.local/share/gitmatic/gitmatic.ini
+code ~/.local/share/gitmatic/gitmatic.ini
 ```
 
-If you do not care about the details, the main thing you need to do is add the folders or repos you want gitmatic to manage.
+If you do not care about the details, the main thing you need to do is add the folders or repos you want gitmatic to manage. 
 
 The safest starting point for most people is `SILENT_UPDATE`:
 
@@ -80,7 +69,7 @@ That tells gitmatic:
 - skip branches that are currently checked out in a worktree
 - skip branches that cannot be fast-forwarded cleanly
 
-### 4) Run it once manually
+### 4) Optional: Run it once manually
 
 ```bash
 ~/.local/share/gitmatic/gitmatic.sh --config ~/.local/share/gitmatic/gitmatic.ini --verbose
@@ -93,7 +82,7 @@ What this does:
 - runs the configured Git operations
 - prints the results to your terminal
 
-At this point, you have a working setup already. You can stop here and just run it manually whenever you want.
+At this point, you have a working setup already, but it will not run automatically.
 
 ### 5) Optional: turn on automatic scheduling with launchd
 
@@ -112,18 +101,6 @@ What this does on your system:
 - runs it at login and then every 900 seconds (15 minutes) by default
 - sends output to `~/Library/Logs/gitmatic.log` by default
 - passes `--log-file ~/Library/Logs/gitmatic.log` to gitmatic
-
-If you set up launchd, you usually do **not** need to keep running gitmatic manually.
-
-## What you need to configure
-
-gitmatic does **not** guess which folders matter to you. You should configure:
-
-- which folders or repos to scan
-- which operation to use for those paths
-- optionally whether logs should be `TXT` or `JSON`
-
-The install script creates a starter config file, but **you still need to edit it**.
 
 ### Which operation should I use?
 
@@ -157,53 +134,8 @@ Rules worth knowing:
 - if a branch cannot be fast-forwarded safely, `SILENT_UPDATE` skips it
 - if you leave out all operation sections, gitmatic defaults to `SILENT_UPDATE` and scans the config file directory
 
-## The scripts, in plain English
 
-### `./scripts/install-macos.sh`
-
-Run this first on macOS if you want the easiest setup.
-
-Result:
-
-- installs the main script into `~/.local/share/gitmatic/`
-- creates a starter config there if you do not already have one
-
-It does **not** set up scheduling.
-
-### `./scripts/install-launchd.sh`
-
-Run this only if you want scheduled background runs on macOS.
-
-Result:
-
-- creates and loads a per-user launchd job
-- uses your installed script and config
-- logs to `~/Library/Logs/gitmatic.log` by default
-
-Optional flags:
-
-```bash
-./scripts/install-launchd.sh \
-  --script "$HOME/.local/share/gitmatic/gitmatic.sh" \
-  --config "$HOME/.local/share/gitmatic/gitmatic.ini" \
-  --log-file "$HOME/Library/Logs/gitmatic-custom.log" \
-  --interval-seconds 1800
-```
-
-That changes:
-
-- the log file location
-- the run interval
-
-### `./scripts/uninstall-launchd.sh`
-
-Removes the macOS launchd job:
-
-```bash
-./scripts/uninstall-launchd.sh
-```
-
-### `./gitmatic.sh`
+## `./gitmatic.sh`
 
 This is the actual tool.
 
@@ -216,7 +148,7 @@ Manual example:
 ./gitmatic.sh --config ./gitmatic.ini --verbose
 ```
 
-## Low-level usage
+### Low-level usage
 
 You do **not** need low-level usage if you are happy with:
 
@@ -253,7 +185,7 @@ If you already set up launchd scheduling, manual use is mostly for:
 - running a dry run before changing behavior
 - troubleshooting
 
-## Logging
+### Logging
 
 This part was too easy to miss before, so here is the direct answer.
 
@@ -301,8 +233,6 @@ In practice:
 - **Linux:** the main script should work; use manual setup or cron/system scheduler of your choice
 - **Other Unix-like systems:** likely usable if you have Bash, Git, `awk`, `sed`, `find`, and `sort`
 - **Windows:** not documented or packaged here
-
-So the current "easy mode" is macOS, but the main script itself is not limited to macOS.
 
 ## Scheduling
 
