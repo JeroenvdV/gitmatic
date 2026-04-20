@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
     cat <<'EOF'
 Usage: install-launchd.sh --script PATH --config PATH [--log-file PATH] [--interval-seconds 900]
@@ -91,6 +93,13 @@ Installed launchd agent:
   interval: ${INTERVAL_SECONDS}s
   log: $LOG_PATH
 
+What this means:
+  - gitmatic will run for your macOS user account at login and then every ${INTERVAL_SECONDS} seconds
+  - both launchd output and gitmatic's --log-file output go to: $LOG_PATH
+
 Check status with:
   launchctl list | grep io.gitmatic.runner
+
+Remove it later with:
+  "$SCRIPT_DIR/uninstall-launchd.sh"
 EOF

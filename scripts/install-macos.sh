@@ -21,10 +21,15 @@ Installed gitmatic files:
   Config: $TARGET_CONFIG
 
 Next:
-  1) Edit config:
-       ${EDITOR:-vi} "$TARGET_CONFIG"
-  2) Run once:
+  1) Edit the config file and add the folders or repos you want to manage:
+       open -e "$TARGET_CONFIG"
+  2) Run gitmatic once manually to confirm the config works:
        "$TARGET_SCRIPT" --config "$TARGET_CONFIG" --verbose
-  3) (Optional) Install launchd job:
-      "$PROJECT_ROOT/scripts/install-launchd.sh" --script "$TARGET_SCRIPT" --config "$TARGET_CONFIG"
+  3) Optional: install macOS launchd scheduling (runs every 15 minutes by default):
+       "$PROJECT_ROOT/scripts/install-launchd.sh" --script "$TARGET_SCRIPT" --config "$TARGET_CONFIG"
+
+Notes:
+  - This script does not enable scheduling automatically.
+  - The launchd helper uses this default log file unless you override it:
+      $HOME/Library/Logs/gitmatic.log
 EOF

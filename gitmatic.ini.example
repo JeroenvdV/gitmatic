@@ -1,43 +1,45 @@
-# gitmatic - Example Configuration File
-# Copy this file as gitmatic.ini and customize it to your needs
+# gitmatic example configuration
+#
+# Replace the example paths below with folders or repositories on your machine.
+# Most users should start with [SILENT_UPDATE].
+# You do not need to use every section.
 
 [SETTINGS]
-# Log format. Available options: TXT, JSON
+# Log format for gitmatic's own output. Available options: TXT, JSON
 log_format = TXT
 
-[PULL]
-# Paths to repositories you want to update using 'git pull'
-# You can provide a direct path to a repository
-/home/user/git/repository1/
-
-# You can also provide a parent directory containing multiple repositories
-# The script will automatically detect all Git repositories in this directory
-/home/user/git/projects/
-
-# Alternative syntax using 'path =' is also possible
-path = /home/user/git/important-project/
-
-[FETCH]
-# Paths to repositories you want to update using 'git fetch'
-# 'fetch' downloads changes but doesn't merge them automatically, which is safer
-# for repositories you're actively working on
-/home/user/git/working-repository/
-
-# As with the [PULL] section, you can specify a parent directory
-/home/user/git/repositories-to-monitor/
-
-# Comments start with '#' or ';'
-; path = /home/user/git/another-project/
-
 [SILENT_UPDATE]
-# Paths where local tracking branches should be updated safely without checkout.
-# This mode will:
+# Safest default for most people.
+# gitmatic will:
 #   1) run git fetch --prune --tags
-#   2) fast-forward local tracking branches only when possible
+#   2) fast-forward local tracking branches only when safe
 #   3) never checkout branches
 #   4) skip and log branches currently checked out in any worktree
 #
-# For actively used repositories, this is often safer than running git pull
-# across everything.
-/home/user/git/repos-safe-to-auto-update/
-path = /home/user/git/monorepos/
+# You can list either:
+#   - a single repository path
+#   - a parent directory to scan recursively for Git repositories
+#
+# Replace this example path with one of your own:
+path = /Users/yourname/code
+
+[FETCH]
+# Use FETCH if you only want to download remote updates and tags.
+# This does not move local branches.
+#
+# Examples:
+# path = /Users/yourname/archive
+# /Users/yourname/another-parent-folder
+
+[PULL]
+# Use PULL only if you explicitly want gitmatic to run normal `git pull`
+# in the matching repositories.
+#
+# Examples:
+# path = /Users/yourname/less-active-projects
+# /Users/yourname/some-single-repo
+
+# Notes:
+# - Comments can start with '#' or ';'
+# - Relative paths are resolved relative to this config file
+# - If a path is a parent directory, gitmatic scans it recursively
