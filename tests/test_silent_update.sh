@@ -116,8 +116,8 @@ run_autogit_for_repo() {
     local config_file="$3"
 
     cat > "$config_file" <<EOF
-[SILENT_UPDATE]
-path = $repo_root
+[silent_update]
+path = "$repo_root"
 EOF
 
     "$AUTOGIT_SCRIPT" --config "$config_file" --log-file "$log_file" >/dev/null
@@ -138,7 +138,7 @@ test_fast_forward_updates_non_checked_out_branch() {
     local before_sha
     local after_sha
     local log_file="$TMPDIR_ROOT/$fixture_name/run.log"
-    local config_file="$TMPDIR_ROOT/$fixture_name/config.ini"
+    local config_file="$TMPDIR_ROOT/$fixture_name/config.toml"
 
     before_sha="$(git -C "$local_repo" rev-parse feature)"
     advance_remote_branch "$fixture_name" feature "remote feature update"
@@ -161,7 +161,7 @@ test_checked_out_worktree_branch_is_skipped() {
     local before_sha
     local after_sha
     local log_file="$TMPDIR_ROOT/$fixture_name/run.log"
-    local config_file="$TMPDIR_ROOT/$fixture_name/config.ini"
+    local config_file="$TMPDIR_ROOT/$fixture_name/config.toml"
 
     git_quiet -C "$local_repo" worktree add "$wt_repo" feature
     before_sha="$(git -C "$local_repo" rev-parse feature)"
@@ -181,7 +181,7 @@ test_diverged_branch_is_skipped() {
     local before_sha
     local after_sha
     local log_file="$TMPDIR_ROOT/$fixture_name/run.log"
-    local config_file="$TMPDIR_ROOT/$fixture_name/config.ini"
+    local config_file="$TMPDIR_ROOT/$fixture_name/config.toml"
 
     # Local commit makes branch diverge from remote.
     git_quiet -C "$local_repo" checkout feature
@@ -213,7 +213,7 @@ test_discovery_supports_multiple_includes_excludes_and_max_depth() {
     local wildcard_repo="$primary_root/team-skipme/project-repo"
     local secondary_repo="$secondary_root/another-repo"
     local log_file="$fixture_dir/run.log"
-    local config_file="$fixture_dir/config.ini"
+    local config_file="$fixture_dir/config.toml"
 
     new_plain_repo "$included_repo"
     mkdir -p "$excluded_parent"
@@ -224,12 +224,9 @@ test_discovery_supports_multiple_includes_excludes_and_max_depth() {
     new_plain_repo "$secondary_repo"
 
     cat > "$config_file" <<EOF
-[FETCH]
-include_path = $primary_root
-include_path = $secondary_root
-include_path = $explicit_repo
-exclude_path = $excluded_parent
-exclude_path = *skipme*
+[fetch]
+include_path = ["$primary_root", "$secondary_root", "$explicit_repo"]
+exclude_path = ["$excluded_parent", "*skipme*"]
 max_depth = 1
 EOF
 
@@ -250,14 +247,14 @@ test_discovery_stops_descending_after_repo_root() {
     local parent_repo="$scan_root/parent-repo"
     local nested_repo="$parent_repo/nested-repo"
     local log_file="$fixture_dir/run.log"
-    local config_file="$fixture_dir/config.ini"
+    local config_file="$fixture_dir/config.toml"
 
     new_plain_repo "$parent_repo"
     new_plain_repo "$nested_repo"
 
     cat > "$config_file" <<EOF
-[FETCH]
-include_path = $scan_root
+[fetch]
+include_path = "$scan_root"
 EOF
 
     run_autogit_with_config "$config_file" "$log_file" --dry-run
@@ -272,20 +269,40 @@ test_discovery_detects_linked_worktrees() {
     local local_repo="$scan_root/local"
     local worktree_repo="$scan_root/worktree-feature"
     local log_file="$scan_root/run.log"
-    local config_file="$scan_root/config.ini"
+    local config_file="$scan_root/config.toml"
 
     new_repo_fixture "$fixture_name"
     git_quiet -C "$local_repo" worktree add "$worktree_repo" feature
 
     cat > "$config_file" <<EOF
-[FETCH]
-include_path = $scan_root
+[fetch]
+include_path = "$scan_root"
 EOF
 
     run_autogit_with_config "$config_file" "$log_file" --dry-run
 
     assert_json_log_contains "$log_file" "FETCH" "$local_repo" "DRY-RUN"
     assert_json_log_contains "$log_file" "FETCH" "$worktree_repo" "DRY-RUN"
+}
+
+test_ini_configs_are_rejected() {
+    local fixture_name="ini-rejected"
+    local fixture_dir="$TMPDIR_ROOT/$fixture_name"
+    local config_file="$fixture_dir/config.ini"
+    local output_file="$fixture_dir/output.log"
+
+    mkdir -p "$fixture_dir"
+    cat > "$config_file" <<'EOF'
+[SILENT_UPDATE]
+path = /tmp/example
+EOF
+
+    if "$AUTOGIT_SCRIPT" --config "$config_file" >"$output_file" 2>&1; then
+        echo "ASSERTION FAILED: INI config should be rejected"
+        exit 1
+    fi
+
+    assert_contains "$output_file" "INI configuration is no longer supported"
 }
 
 main() {
@@ -300,6 +317,7 @@ main() {
     test_discovery_supports_multiple_includes_excludes_and_max_depth
     test_discovery_stops_descending_after_repo_root
     test_discovery_detects_linked_worktrees
+    test_ini_configs_are_rejected
     echo "All tests passed"
 }
 
