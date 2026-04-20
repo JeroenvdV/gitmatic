@@ -1,0 +1,53 @@
+# gitmatic example configuration
+#
+# Replace the example paths below with folders or repositories on your machine.
+# Most users should start with [SILENT_UPDATE].
+# You do not need to use every section.
+# gitmatic writes JSON log lines to stdout and to --log-file when provided.
+# Repeat include_path to scan multiple roots.
+# exclude_path accepts exact paths or simple glob patterns such as *archive*.
+# Discovery stops when gitmatic finds a repo root; nested repos must be included explicitly.
+
+[SILENT_UPDATE]
+# Safest default for most people.
+# gitmatic will:
+#   1) run git fetch --prune --tags
+#   2) fast-forward local tracking branches only when safe
+#   3) never checkout branches
+#   4) skip and log branches currently checked out in any worktree
+#
+# You can list either:
+#   - a single repository path
+#   - a parent directory to scan recursively for Git repositories
+#
+# Replace these example paths with your own:
+include_path = /Users/yourname/code
+# include_path = /Users/yourname/work
+# exclude_path = /Users/yourname/code/archive
+# exclude_path = *node_modules*
+# max_depth = 4
+
+[FETCH]
+# Use FETCH if you only want to download remote updates and tags.
+# This does not move local branches.
+#
+# Examples:
+# include_path = /Users/yourname/archive
+# include_path = /Users/yourname/another-parent-folder
+# exclude_path = *vendor*
+
+[PULL]
+# Use PULL only if you explicitly want gitmatic to run normal `git pull`
+# in the matching repositories.
+#
+# Examples:
+# include_path = /Users/yourname/less-active-projects
+# include_path = /Users/yourname/some-single-repo
+
+# Notes:
+# - Comments can start with '#' or ';'
+# - include_path and path are equivalent; path is kept as a compatibility alias
+# - Relative include_path values are resolved relative to this config file
+# - Exact exclude_path values are resolved relative to this config file
+# - Wildcard exclude_path values match against the discovered absolute path
+# - max_depth counts directory levels below each include_path
