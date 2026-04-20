@@ -1,69 +1,232 @@
 # gitmatic
 
 <p align="center">
-  <img src="logo.jpg" alt="gitmatic Logo" width="500"/>
+  <img src="logo.jpg" alt="gitmatic logo" width="500"/>
 </p>
 
 <p align="center">
-  <strong>Automate safe Git maintenance across multiple repositories</strong>
+  <strong>Keep many Git repositories up to date without manually visiting each one.</strong>
 </p>
 
-## What it does
+gitmatic is a Bash script that scans directories for Git repositories and then runs one of these maintenance actions:
 
-gitmatic is a Bash tool that scans one or more parent directories, discovers Git repositories (including worktrees), and performs configured maintenance operations:
+- `FETCH`: `git fetch --prune --tags`
+- `PULL`: `git pull`
+- `SILENT_UPDATE`: safely fast-forward local tracking branches without checking them out
 
-- `FETCH` section: `git fetch --prune --tags`
-- `PULL` section: `git pull`
-- `SILENT_UPDATE` section: safe local tracking-branch updates **without checkout**
+If you are landing on this page and thinking "what do I actually do?", start with the macOS quick start below.
 
-## Why `SILENT_UPDATE` exists
+## Quick start for macOS
 
-`SILENT_UPDATE` is designed for users who want repository metadata updated in the background while they may be actively working in worktrees.
+This is the shortest path if you just want to use the tool.
 
-Behavior:
+### 1) Clone the repo
 
-1. Fetch remote updates.
-2. Enumerate local branches that have an upstream.
-3. For each branch:
-   - Skip if currently checked out in any worktree.
-   - Skip if fast-forward is not possible.
-   - Otherwise fast-forward local branch ref to upstream **without checkout**.
+```bash
+git clone https://github.com/JeroenvdV/gitmatic.git
+cd gitmatic
+```
 
-See concise mechanism docs here:
-- [`docs/silent-update.md`](docs/silent-update.md)
+What this does:
 
-## Installation
+- downloads this repository onto your Mac
+- puts you in the project folder so the next commands work
 
-### macOS (automated)
-
-Install script + config scaffold + optional launchd helper:
+### 2) Run the macOS install helper
 
 ```bash
 ./scripts/install-macos.sh
 ```
 
-Install a launch agent that runs every 15 minutes:
+What this does on your system:
+
+- creates `~/.local/share/gitmatic/` if it does not exist
+- copies `gitmatic.sh` there
+- makes that copied script executable
+- copies `gitmatic.ini.example` to `~/.local/share/gitmatic/gitmatic.ini` if you do not already have a config file there
+
+What it does **not** do:
+
+- it does **not** enable scheduling by itself
+- it does **not** edit your config for you
+- it does **not** install a launchd job automatically
+
+### 3) Edit the config file
+
+Open this file in a text editor, for example:
 
 ```bash
-./scripts/install-launchd.sh
+open -e ~/.local/share/gitmatic/gitmatic.ini
 ```
 
-### Generic manual setup
+If you do not care about the details, the main thing you need to do is add the folders or repos you want gitmatic to manage.
 
-1. Clone repository.
-2. Make scripts executable:
+The safest starting point for most people is `SILENT_UPDATE`:
+
+```ini
+[SETTINGS]
+log_format = TXT
+
+[SILENT_UPDATE]
+path = /Users/yourname/code
+```
+
+That tells gitmatic:
+
+- look under `/Users/yourname/code`
+- find Git repositories there
+- fetch updates
+- fast-forward local tracking branches when it is safe
+- skip branches that are currently checked out in a worktree
+- skip branches that cannot be fast-forwarded cleanly
+
+### 4) Run it once manually
 
 ```bash
-chmod +x gitmatic.sh scripts/*.sh tests/*.sh
+~/.local/share/gitmatic/gitmatic.sh --config ~/.local/share/gitmatic/gitmatic.ini --verbose
 ```
 
-3. Copy config template:
+What this does:
+
+- reads your config
+- scans the paths you configured
+- runs the configured Git operations
+- prints the results to your terminal
+
+At this point, you have a working setup already. You can stop here and just run it manually whenever you want.
+
+### 5) Optional: turn on automatic scheduling with launchd
+
+If you want it to run in the background on macOS, install the launchd agent:
 
 ```bash
-cp gitmatic.ini.example gitmatic.ini
+./scripts/install-launchd.sh \
+  --script "$HOME/.local/share/gitmatic/gitmatic.sh" \
+  --config "$HOME/.local/share/gitmatic/gitmatic.ini"
 ```
 
-## Usage
+What this does on your system:
+
+- creates `~/Library/LaunchAgents/io.gitmatic.runner.plist`
+- tells macOS launchd to run gitmatic for your user account
+- runs it at login and then every 900 seconds (15 minutes) by default
+- sends output to `~/Library/Logs/gitmatic.log` by default
+- passes `--log-file ~/Library/Logs/gitmatic.log` to gitmatic
+
+If you set up launchd, you usually do **not** need to keep running gitmatic manually.
+
+## What you need to configure
+
+gitmatic does **not** guess which folders matter to you. You should configure:
+
+- which folders or repos to scan
+- which operation to use for those paths
+- optionally whether logs should be `TXT` or `JSON`
+
+The install script creates a starter config file, but **you still need to edit it**.
+
+### Which operation should I use?
+
+Most users should start with `SILENT_UPDATE`.
+
+Use:
+
+- `SILENT_UPDATE` if you want safer background updating
+- `FETCH` if you only want remote refs updated and do not want local branches moved
+- `PULL` only if you explicitly want working trees updated with normal `git pull`
+
+### Example config
+
+```ini
+[SETTINGS]
+log_format = TXT
+
+[SILENT_UPDATE]
+path = /Users/yourname/code
+
+[FETCH]
+path = /Users/yourname/archive
+```
+
+Rules worth knowing:
+
+- each section can contain repo paths or parent directories
+- parent directories are scanned recursively for Git repos
+- relative paths are resolved relative to the config file location
+- if a branch is checked out in any worktree, `SILENT_UPDATE` skips it
+- if a branch cannot be fast-forwarded safely, `SILENT_UPDATE` skips it
+- if you leave out all operation sections, gitmatic defaults to `SILENT_UPDATE` and scans the config file directory
+
+## The scripts, in plain English
+
+### `./scripts/install-macos.sh`
+
+Run this first on macOS if you want the easiest setup.
+
+Result:
+
+- installs the main script into `~/.local/share/gitmatic/`
+- creates a starter config there if you do not already have one
+
+It does **not** set up scheduling.
+
+### `./scripts/install-launchd.sh`
+
+Run this only if you want scheduled background runs on macOS.
+
+Result:
+
+- creates and loads a per-user launchd job
+- uses your installed script and config
+- logs to `~/Library/Logs/gitmatic.log` by default
+
+Optional flags:
+
+```bash
+./scripts/install-launchd.sh \
+  --script "$HOME/.local/share/gitmatic/gitmatic.sh" \
+  --config "$HOME/.local/share/gitmatic/gitmatic.ini" \
+  --log-file "$HOME/Library/Logs/gitmatic-custom.log" \
+  --interval-seconds 1800
+```
+
+That changes:
+
+- the log file location
+- the run interval
+
+### `./scripts/uninstall-launchd.sh`
+
+Removes the macOS launchd job:
+
+```bash
+./scripts/uninstall-launchd.sh
+```
+
+### `./gitmatic.sh`
+
+This is the actual tool.
+
+If you have launchd set up, this is the thing launchd runs for you.
+You can still run it yourself manually, but you do not have to.
+
+Manual example:
+
+```bash
+./gitmatic.sh --config ./gitmatic.ini --verbose
+```
+
+## Low-level usage
+
+You do **not** need low-level usage if you are happy with:
+
+1. `install-macos.sh`
+2. editing the config
+3. optionally `install-launchd.sh`
+
+That is the normal user flow.
+
+Low-level usage just means running the main script directly yourself:
 
 ```bash
 ./gitmatic.sh [OPTIONS]
@@ -71,85 +234,135 @@ cp gitmatic.ini.example gitmatic.ini
 
 Options:
 
-- `--config FILE` - Path to config file (default `gitmatic.ini`)
-- `--dry-run` - Print actions without changing repositories
-- `--verbose` / `-v` - Extra progress output
-- `--log-file FILE` - Append logs to this file
-- `--help` - Show help
+- `--config FILE` - config file to use
+- `--dry-run` - show what would happen without changing repos
+- `--verbose` or `-v` - print extra progress output
+- `--log-file FILE` - append logs to a file
+- `--help` - show help
 
-Examples:
+Useful examples:
+
+```bash
+./gitmatic.sh --config ./gitmatic.ini --dry-run --verbose
+./gitmatic.sh --config ./gitmatic.ini --log-file ./gitmatic.log
+```
+
+If you already set up launchd scheduling, manual use is mostly for:
+
+- testing a config change immediately
+- running a dry run before changing behavior
+- troubleshooting
+
+## Logging
+
+This part was too easy to miss before, so here is the direct answer.
+
+### If you run `gitmatic.sh` manually
+
+- output always goes to your terminal
+- no log file is created unless you pass `--log-file`
+
+Example:
 
 ```bash
 ./gitmatic.sh --config ./gitmatic.ini --log-file ./gitmatic.log
-./gitmatic.sh --dry-run --verbose
 ```
 
-## Configuration
+If the log file's parent directory does not exist, gitmatic creates it.
 
-The file is INI-like. Each operation section accepts repository paths or parent paths to scan recursively.
+### If you use the macOS launchd helper
 
-```ini
-[SETTINGS]
-log_format = TXT
+Default log file:
 
-[FETCH]
-path = /Users/you/src
-
-[PULL]
-# use cautiously if you actively edit repos
-path = /Users/you/archived-projects
-
-[SILENT_UPDATE]
-path = /Users/you/src
+```text
+~/Library/Logs/gitmatic.log
 ```
 
-Notes:
+That default comes from `scripts/install-launchd.sh`.
 
-- Relative paths are resolved relative to the configuration file location.
-- The scanner includes repos where `.git` is a directory **or** a file (worktree-linked repos).
-- Worktree-checked-out branches are logged as skipped in `SILENT_UPDATE`.
-- If no operation sections are configured, gitmatic defaults to `SILENT_UPDATE` using the configuration file directory as the scan root.
+The launchd job sends both standard output and standard error there, and also passes that same path as gitmatic's `--log-file`.
+
+So if you use the provided macOS scheduling script, yes: there **is** a default log file directory, and it is under `~/Library/Logs/`.
+
+## Does this work on other operating systems?
+
+### Yes, the main tool does
+
+`gitmatic.sh` is a Bash script and the core tool is not macOS-specific.
+
+Today, this repository includes:
+
+- a portable core script for Unix-like systems with standard command-line tools
+- macOS-specific helper scripts for launchd installation/removal
+
+In practice:
+
+- **macOS:** supported, with helper scripts included
+- **Linux:** the main script should work; use manual setup or cron/system scheduler of your choice
+- **Other Unix-like systems:** likely usable if you have Bash, Git, `awk`, `sed`, `find`, and `sort`
+- **Windows:** not documented or packaged here
+
+So the current "easy mode" is macOS, but the main script itself is not limited to macOS.
 
 ## Scheduling
 
-### macOS `launchd` (recommended)
+If you want automation, choose one scheduler.
 
-Install:
+### macOS: use launchd
+
+Recommended on macOS:
 
 ```bash
 ./scripts/install-launchd.sh \
   --script "$HOME/.local/share/gitmatic/gitmatic.sh" \
-  --config "$HOME/.local/share/gitmatic/gitmatic.ini" \
-  --interval-seconds 900
+  --config "$HOME/.local/share/gitmatic/gitmatic.ini"
 ```
 
-Uninstall:
+Remove it with:
 
 ```bash
 ./scripts/uninstall-launchd.sh
 ```
 
-### cron
+### Linux or generic Unix: use cron
 
-Run every 15 minutes:
+Example: run every 15 minutes
 
 ```cron
 */15 * * * * /absolute/path/to/gitmatic.sh --config /absolute/path/to/gitmatic.ini --log-file /absolute/path/to/gitmatic.log
 ```
 
+Use absolute paths in scheduler jobs.
+
+## What `SILENT_UPDATE` actually does
+
+This is the mode most people will want for background maintenance.
+
+For each matching repository, it:
+
+1. runs `git fetch --prune --tags`
+2. checks local branches that have an upstream
+3. skips branches that are checked out in any worktree
+4. skips branches that are ahead or diverged
+5. fast-forwards safe branches without checking them out
+
+That means it is designed to avoid surprising changes to working trees.
+
+More detail lives in [`docs/silent-update.md`](docs/silent-update.md).
+
 ## Tests
 
-Lightweight, isolated tests create temporary repositories and bare remotes locally (no network):
+Run the lightweight local tests with:
 
 ```bash
 ./tests/run.sh
 ```
 
-Coverage currently includes:
+These tests create temporary local repositories and verify:
 
-- fast-forward update of non-checked-out tracking branch
-- skip on non-fast-forward/diverged branch
-- skip when branch is checked out in another worktree
+- safe fast-forward updates happen when allowed
+- checked-out worktree branches are skipped
+- diverged branches are skipped
 
 ## License
 
