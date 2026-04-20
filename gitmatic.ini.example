@@ -3,10 +3,7 @@
 # Replace the example paths below with folders or repositories on your machine.
 # Most users should start with [SILENT_UPDATE].
 # You do not need to use every section.
-
-[SETTINGS]
-# Log format for gitmatic's own output. Available options: TXT, JSON
-log_format = TXT
+# gitmatic writes JSON log lines to stdout and to --log-file when provided.
 
 [SILENT_UPDATE]
 # Safest default for most people.

@@ -15,7 +15,6 @@ set -u
 
 CONFIG_FILE="gitmatic.ini"
 DRY_RUN=false
-LOG_FORMAT="TXT"
 VERBOSE=false
 LOG_FILE=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,23 +43,14 @@ get_timestamp() {
     date "+%Y-%m-%d %H:%M:%S"
 }
 
-log_txt() {
-    local timestamp="$1"
-    local type="$2"
-    local path="$3"
-    local status="$4"
-    local message="$5"
-
-    if [ -n "$message" ]; then
-        printf "[%s] %s: %s - %s (%s)\n" "$timestamp" "$type" "$path" "$status" "$message"
-    else
-        printf "[%s] %s: %s - %s\n" "$timestamp" "$type" "$path" "$status"
-    fi
-}
-
 log_json_escape() {
     local text="$1"
-    printf '%s' "$text" | sed ':a;N;$!ba; s/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g'
+    text="${text//\\/\\\\}"
+    text="${text//\"/\\\"}"
+    text="${text//$'\n'/\\n}"
+    text="${text//$'\r'/\\r}"
+    text="${text//$'\t'/\\t}"
+    printf '%s' "$text"
 }
 
 log_json() {
@@ -95,11 +85,7 @@ log_operation() {
     local line
 
     timestamp="$(get_timestamp)"
-    if [ "$LOG_FORMAT" = "JSON" ]; then
-        line="$(log_json "$timestamp" "$type" "$path" "$status" "$message")"
-    else
-        line="$(log_txt "$timestamp" "$type" "$path" "$status" "$message")"
-    fi
+    line="$(log_json "$timestamp" "$type" "$path" "$status" "$message")"
 
     printf "%s\n" "$line"
     if [ -n "$LOG_FILE" ]; then
@@ -122,7 +108,7 @@ log_warning() {
 verbose_log() {
     local message="$1"
     if $VERBOSE; then
-        printf "[INFO] %s\n" "$message"
+        log_operation "INFO" "" "VERBOSE" "$message"
     fi
 }
 
@@ -167,37 +153,6 @@ resolve_config_path() {
         /*) canonical_path "$raw_path" ;;
         *) canonical_path "$CONFIG_DIR/$raw_path" ;;
     esac
-}
-
-extract_setting_value() {
-    local key="$1"
-    awk -v requested_key="$key" '
-        BEGIN { in_settings = 0 }
-        /^\[[^]]+\]/ {
-            if ($0 == "[SETTINGS]") {
-                in_settings = 1
-                next
-            }
-            if (in_settings == 1) {
-                exit
-            }
-        }
-        in_settings == 1 {
-            line = $0
-            sub(/^[[:space:]]+/, "", line)
-            sub(/[[:space:]]+$/, "", line)
-            if (line == "" || line ~ /^[#;]/) {
-                next
-            }
-            if (line ~ "^" requested_key "[[:space:]]*=") {
-                sub("^" requested_key "[[:space:]]*=[[:space:]]*", "", line)
-                sub(/[[:space:]]*[#;].*$/, "", line)
-                sub(/[[:space:]]+$/, "", line)
-                print line
-                exit
-            }
-        }
-    ' "$CONFIG_FILE"
 }
 
 extract_section_paths() {
@@ -566,14 +521,6 @@ load_config() {
     fi
 
     CONFIG_DIR="$(cd "$(dirname "$CONFIG_FILE")" && pwd)"
-
-    local configured_format
-    configured_format="$(extract_setting_value "log_format" | tr '[:lower:]' '[:upper:]')"
-    case "$configured_format" in
-        TXT|JSON) LOG_FORMAT="$configured_format" ;;
-        "") ;;
-        *) LOG_FORMAT="TXT" ;;
-    esac
 }
 
 main() {

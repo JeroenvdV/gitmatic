@@ -32,6 +32,21 @@ assert_equals() {
     fi
 }
 
+assert_json_log_contains() {
+    local file="$1"
+    local type="$2"
+    local path="$3"
+    local status="$4"
+    local message="${5:-}"
+    local expected
+
+    expected="\"type\":\"$type\",\"path\":\"$path\",\"status\":\"$status\""
+    if [ -n "$message" ]; then
+        expected="$expected,\"message\":\"$message\""
+    fi
+    assert_contains "$file" "$expected"
+}
+
 new_repo_fixture() {
     local name="$1"
     local fixture_dir="$TMPDIR_ROOT/$name"
@@ -85,9 +100,6 @@ run_autogit_for_repo() {
     local config_file="$3"
 
     cat > "$config_file" <<EOF
-[SETTINGS]
-log_format = TXT
-
 [SILENT_UPDATE]
 path = $repo_root
 EOF
@@ -114,7 +126,7 @@ test_fast_forward_updates_non_checked_out_branch() {
         echo "ASSERTION FAILED: feature branch did not move after fast-forward update"
         exit 1
     fi
-    assert_contains "$log_file" "SILENT_UPDATE: $local_repo:feature - UPDATED"
+    assert_json_log_contains "$log_file" "SILENT_UPDATE" "$local_repo:feature" "UPDATED"
 }
 
 test_checked_out_worktree_branch_is_skipped() {
@@ -135,7 +147,7 @@ test_checked_out_worktree_branch_is_skipped() {
     after_sha="$(git -C "$local_repo" rev-parse feature)"
 
     assert_equals "$before_sha" "$after_sha" "feature should remain unchanged when checked out in a worktree"
-    assert_contains "$log_file" "WARN: $local_repo:feature - SKIPPED (Skipped because this branch is checked out in a worktree)"
+    assert_json_log_contains "$log_file" "WARN" "$local_repo:feature" "SKIPPED" "Skipped because this branch is checked out in a worktree"
 }
 
 test_diverged_branch_is_skipped() {
@@ -161,7 +173,7 @@ test_diverged_branch_is_skipped() {
     after_sha="$(git -C "$local_repo" rev-parse feature)"
 
     assert_equals "$before_sha" "$after_sha" "diverged feature should not be rewritten"
-    assert_contains "$log_file" "WARN: $local_repo:feature - SKIPPED (Skipped because fast-forward is not possible (branch diverged or ahead))"
+    assert_json_log_contains "$log_file" "WARN" "$local_repo:feature" "SKIPPED" "Skipped because fast-forward is not possible (branch diverged or ahead)"
 }
 
 main() {

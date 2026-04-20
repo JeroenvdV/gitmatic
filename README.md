@@ -53,9 +53,6 @@ If you do not care about the details, the main thing you need to do is add the f
 The safest starting point for most people is `SILENT_UPDATE`:
 
 ```ini
-[SETTINGS]
-log_format = TXT
-
 [SILENT_UPDATE]
 path = /Users/yourname/code
 ```
@@ -115,9 +112,6 @@ Use:
 ### Example config
 
 ```ini
-[SETTINGS]
-log_format = TXT
-
 [SILENT_UPDATE]
 path = /Users/yourname/code
 
@@ -189,9 +183,11 @@ If you already set up launchd scheduling, manual use is mostly for:
 
 This part was too easy to miss before, so here is the direct answer.
 
+gitmatic writes JSON log lines.
+
 ### If you run `gitmatic.sh` manually
 
-- output always goes to your terminal
+- output always goes to your terminal as JSON lines
 - no log file is created unless you pass `--log-file`
 
 Example:
