@@ -8,249 +8,194 @@
   <strong>Keep many Git repositories up to date without manually visiting each one.</strong>
 </p>
 
-Gitmatic regularly updates your local git branches from the remote. It stays out of your way and saves you time when pulling.
+Gitmatic is now a Python-based tool that automates Git maintenance across many repositories while staying conservative about working trees.
 
-## Action mode choices
+## What changed
 
-- `SILENT_UPDATE` (default): safely fast-forward local tracking branches without checking them out
-- `FETCH`: `git fetch --prune --tags`
-- `PULL`: `git pull`
+- The core tool is now `gitmatic.py`, with `gitmatic.sh` kept as a tiny wrapper for convenience.
+- Configuration is now **TOML only**.
+- INI support has been removed.
+- macOS users can optionally reuse a dedicated `ssh-agent` across scheduled runs to avoid repeated Touch ID or fingerprint prompts.
+- macOS users can optionally get native notifications when selected problems occur.
+
+## Action modes
+
+- `silent_update`: safely fast-forward local tracking branches without checking them out
+- `fetch`: run `git fetch --prune --tags`
+- `pull`: run `git pull`
+
+Most users should start with `silent_update`.
 
 ## Quick start for macOS
 
-This is the shortest path if you just want to use the tool.
-
-### 1) Clone the repo
-
-### 2) Run the macOS install helper
+### 1) Install the helper
 
 ```bash
 ./scripts/install-macos.sh
 ```
 
-What this does on your system:
+This installs:
 
-- copies `gitmatic.sh` to `~/.local/share/gitmatic/`
-- makes the script executable
-- copies `gitmatic.ini.example` to `~/.local/share/gitmatic/gitmatic.ini` if you do not already have a config file there
+- `~/.local/share/gitmatic/gitmatic.sh`
+- `~/.local/share/gitmatic/gitmatic.py`
+- `~/.local/share/gitmatic/gitmatic.toml`
 
-What it does **not** do:
+It does **not** automatically enable launchd scheduling.
 
-- it does **not** enable scheduling by itself
-- it does **not** edit your config for you
-- it does **not** install a launchd job automatically
-
-### 3) Edit the config file
-
-Open this file in a text editor, for example:
+### 2) Edit the TOML config
 
 ```bash
-code ~/.local/share/gitmatic/gitmatic.ini
+code ~/.local/share/gitmatic/gitmatic.toml
 ```
 
-If you do not care about the details, the main thing you need to do is add the folders or repos you want gitmatic to manage. 
+Minimal example:
 
-The safest starting point for most people is `SILENT_UPDATE`:
-
-```ini
-[SILENT_UPDATE]
-include_path = /Users/yourname/code
+```toml
+[silent_update]
+include_path = ["/Users/yourname/code"]
 ```
 
-That tells gitmatic:
+### 3) Optional: enable SSH key caching
 
-- look under `/Users/yourname/code`
-- find Git repositories there
-- fetch updates
-- fast-forward local tracking branches when it is safe
-- skip branches that are currently checked out in a worktree
-- skip branches that cannot be fast-forwarded cleanly
+If scheduled Git updates keep asking macOS to release your SSH key, configure a dedicated agent:
 
-### 4) Optional: Run it once manually
+```toml
+[ssh_agent]
+enabled = true
+key_path = "~/.ssh/id_ed25519"
+cache_ttl_seconds = 28800
+use_keychain = true
+```
+
+How this works:
+
+- gitmatic reuses a previously started `ssh-agent` when possible
+- it stores the agent socket and PID in a small state file
+- it loads the configured key into that agent with a TTL
+- later runs reuse the same unlocked key cache instead of starting from scratch each time
+
+This reduces repeated key release prompts substantially when the agent remains alive and the key TTL has not expired.
+
+### 4) Optional: enable native macOS notifications
+
+```toml
+[notifications]
+enabled = true
+backend = "macos"
+title = "gitmatic"
+unexpected_statuses = ["FAILED"]
+unexpected_codes = ["prefetch_failed", "fetch_failed", "pull_failed", "ssh_key_add_failed"]
+```
+
+Notifications are aggregated per run and currently use macOS Notification Center via `osascript`.
+
+### 5) Run it once manually
 
 ```bash
-~/.local/share/gitmatic/gitmatic.sh --config ~/.local/share/gitmatic/gitmatic.ini --verbose
+~/.local/share/gitmatic/gitmatic.sh --config ~/.local/share/gitmatic/gitmatic.toml --verbose
 ```
 
-What this does:
-
-- reads your config
-- scans the paths you configured
-- runs the configured Git operations
-- prints the results to your terminal
-
-At this point, you have a working setup already, but it will not run automatically.
-
-### 5) Optional: turn on automatic scheduling with launchd
-
-If you want it to run in the background on macOS, install the launchd agent:
+### 6) Optional: schedule it with launchd
 
 ```bash
 ./scripts/install-launchd.sh \
   --script "$HOME/.local/share/gitmatic/gitmatic.sh" \
-  --config "$HOME/.local/share/gitmatic/gitmatic.ini"
+  --config "$HOME/.local/share/gitmatic/gitmatic.toml"
 ```
 
-What this does on your system:
+This creates `~/Library/LaunchAgents/io.gitmatic.runner.plist`, runs at login, then repeats every 900 seconds by default, and logs to `~/Library/Logs/gitmatic.log`.
 
-- creates `~/Library/LaunchAgents/io.gitmatic.runner.plist`
-- tells macOS launchd to run gitmatic for your user account
-- runs it at login and then every 900 seconds (15 minutes) by default
-- sends output to `~/Library/Logs/gitmatic.log` by default
-- passes `--log-file ~/Library/Logs/gitmatic.log` to gitmatic
+## Configuration
 
-### Which operation should I use?
+Use TOML tables named `silent_update`, `fetch`, and `pull`.
 
-Most users should start with `SILENT_UPDATE`.
+Example:
 
-Use:
-
-- `SILENT_UPDATE` if you want safer background updating
-- `FETCH` if you only want remote refs updated and do not want local branches moved
-- `PULL` only if you explicitly want working trees updated with normal `git pull`
-
-### Example config
-
-```ini
-[SILENT_UPDATE]
-include_path = /Users/yourname/code
-include_path = /Users/yourname/work
-exclude_path = /Users/yourname/code/archive
-exclude_path = *node_modules*
+```toml
+[silent_update]
+include_path = ["/Users/yourname/code", "/Users/yourname/work"]
+exclude_path = ["/Users/yourname/code/archive", "*node_modules*"]
 max_depth = 4
 
-[FETCH]
-include_path = /Users/yourname/archive
+[fetch]
+include_path = "/Users/yourname/archive"
+
+[notifications]
+enabled = true
+backend = "macos"
+unexpected_statuses = ["FAILED"]
+unexpected_codes = ["prefetch_failed", "ssh_key_add_failed"]
 ```
 
 Rules worth knowing:
 
-- each section can contain multiple `include_path` and `exclude_path` entries
-- `path = ...` still works as a compatibility alias for `include_path = ...`
+- `include_path` accepts either a string or an array of strings
+- `path` still works as a compatibility alias for `include_path`
+- `exclude_path` accepts either a string or an array of strings
 - exact `exclude_path` values are resolved relative to the config file location
-- wildcard `exclude_path` values use simple Bash-style glob matching against the discovered absolute path
+- wildcard `exclude_path` values use simple glob matching against discovered absolute paths
 - `max_depth` limits how deep gitmatic descends below each include root
 - when gitmatic finds a repo root, it stops descending into that repo
 - nested repos are only discovered if you include them explicitly
-- if a branch is checked out in any worktree, `SILENT_UPDATE` skips it
-- if a branch cannot be fast-forwarded safely, `SILENT_UPDATE` skips it
-- gitmatic does not read repository `.gitignore` files during repo discovery
-- if you leave out all operation sections, gitmatic defaults to `SILENT_UPDATE` and scans the config file directory
+- if a branch is checked out in any worktree, `silent_update` skips it
+- if a branch cannot be fast-forwarded safely, `silent_update` skips it
+- if you leave out all operation tables, gitmatic defaults to `silent_update` in the config directory
 
+## Command-line usage
 
-## `./gitmatic.sh`
-
-This is the actual tool.
-
-If you have launchd set up, this is the thing launchd runs for you.
-You can still run it yourself manually, but you do not have to.
-
-Manual example:
+You can run either:
 
 ```bash
-./gitmatic.sh --config ./gitmatic.ini --verbose
-```
-
-### Low-level usage
-
-You do **not** need low-level usage if you are happy with:
-
-1. `install-macos.sh`
-2. editing the config
-3. optionally `install-launchd.sh`
-
-That is the normal user flow.
-
-Low-level usage just means running the main script directly yourself:
-
-```bash
+./gitmatic.py [OPTIONS]
 ./gitmatic.sh [OPTIONS]
 ```
 
 Options:
 
-- `--config FILE` - config file to use
-- `--dry-run` - show what would happen without changing repos
+- `--config FILE` - path to the TOML config file
+- `--dry-run` - show what would happen without changing repositories
 - `--verbose` or `-v` - print extra progress output
-- `--log-file FILE` - append logs to a file
+- `--log-file FILE` - append JSON logs to a file
 - `--help` - show help
 
-Useful examples:
+Examples:
 
 ```bash
-./gitmatic.sh --config ./gitmatic.ini --dry-run --verbose
-./gitmatic.sh --config ./gitmatic.ini --log-file ./gitmatic.log
+./gitmatic.sh --config ./gitmatic.toml --dry-run --verbose
+./gitmatic.py --config ./gitmatic.toml --log-file ./gitmatic.log
 ```
 
-If you already set up launchd scheduling, manual use is mostly for:
+If you point `--config` at an `.ini` file, gitmatic exits with an error because INI is no longer supported.
 
-- testing a config change immediately
-- running a dry run before changing behavior
-- troubleshooting
+## Logging
 
-### Logging
+gitmatic writes one JSON object per log line.
 
-This part was too easy to miss before, so here is the direct answer.
+When run manually:
 
-gitmatic writes JSON log lines.
-
-### If you run `gitmatic.sh` manually
-
-- output always goes to your terminal as JSON lines
+- logs always go to stdout
 - no log file is created unless you pass `--log-file`
 
-Example:
+When run through the provided macOS launchd helper:
 
-```bash
-./gitmatic.sh --config ./gitmatic.ini --log-file ./gitmatic.log
-```
+- launchd stdout/stderr goes to `~/Library/Logs/gitmatic.log`
+- gitmatic also appends its structured logs to that same file
 
-If the log file's parent directory does not exist, gitmatic creates it.
+## Platform support
 
-### If you use the macOS launchd helper
-
-Default log file:
-
-```text
-~/Library/Logs/gitmatic.log
-```
-
-That default comes from `scripts/install-launchd.sh`.
-
-The launchd job sends both standard output and standard error there, and also passes that same path as gitmatic's `--log-file`.
-
-So if you use the provided macOS scheduling script, yes: there **is** a default log file directory, and it is under `~/Library/Logs/`.
-
-## Does this work on other operating systems?
-
-### Yes, the main tool does
-
-`gitmatic.sh` is a Bash script and the core tool is not macOS-specific.
-
-Today, this repository includes:
-
-- a portable core script for Unix-like systems with standard command-line tools
-- macOS-specific helper scripts for launchd installation/removal
-
-In practice:
-
-- **macOS:** supported, with helper scripts included
-- **Linux:** the main script should work; use manual setup or cron/system scheduler of your choice
-- **Other Unix-like systems:** likely usable if you have Bash, Git, `awk`, `sed`, `find`, and `sort`
-- **Windows:** not documented or packaged here
+- **macOS:** supported, including launchd helper scripts, reusable SSH-agent support, and native notifications
+- **Linux:** the main Python tool works; use cron or another scheduler
+- **Other Unix-like systems:** likely usable with Python 3.11+ and Git
+- **Windows:** not documented here
 
 ## Scheduling
 
-If you want automation, choose one scheduler.
-
-### macOS: use launchd
-
-Recommended on macOS:
+### macOS
 
 ```bash
 ./scripts/install-launchd.sh \
   --script "$HOME/.local/share/gitmatic/gitmatic.sh" \
-  --config "$HOME/.local/share/gitmatic/gitmatic.ini"
+  --config "$HOME/.local/share/gitmatic/gitmatic.toml"
 ```
 
 Remove it with:
@@ -259,29 +204,25 @@ Remove it with:
 ./scripts/uninstall-launchd.sh
 ```
 
-### Linux or generic Unix: use cron
+### Linux or generic Unix
 
-Example: run every 15 minutes
+Example cron entry:
 
 ```cron
-*/15 * * * * /absolute/path/to/gitmatic.sh --config /absolute/path/to/gitmatic.ini --log-file /absolute/path/to/gitmatic.log
+*/15 * * * * /absolute/path/to/gitmatic.sh --config /absolute/path/to/gitmatic.toml --log-file /absolute/path/to/gitmatic.log
 ```
 
 Use absolute paths in scheduler jobs.
 
-## What `SILENT_UPDATE` actually does
+## Silent update details
 
-This is the mode most people will want for background maintenance.
-
-For each matching repository, it:
+`silent_update` is the safest background mode. For each matching repository it:
 
 1. runs `git fetch --prune --tags`
 2. checks local branches that have an upstream
-3. skips branches that are checked out in any worktree
+3. skips branches checked out in any worktree
 4. skips branches that are ahead or diverged
 5. fast-forwards safe branches without checking them out
-
-That means it is designed to avoid surprising changes to working trees.
 
 More detail lives in [`docs/silent-update.md`](docs/silent-update.md).
 
@@ -293,11 +234,13 @@ Run the lightweight local tests with:
 ./tests/run.sh
 ```
 
-These tests create temporary local repositories and verify:
+The tests verify:
 
 - safe fast-forward updates happen when allowed
 - checked-out worktree branches are skipped
 - diverged branches are skipped
+- repository discovery rules still behave correctly
+- old INI configs are rejected
 
 ## License
 

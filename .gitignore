@@ -1,4 +1,5 @@
-gitmatic.ini
+gitmatic.toml
+__pycache__/
 autogit.log
 gitmatic.log
 .autogit-test-tmp

@@ -1,0 +1,47 @@
+# gitmatic example configuration
+#
+# Replace the example paths below with folders or repositories on your machine.
+# Most users should start with [silent_update].
+# You do not need to use every section.
+# gitmatic writes JSON log lines to stdout and to --log-file when provided.
+# include_path accepts either a single string or an array of strings.
+# exclude_path accepts exact paths or simple glob patterns such as "*archive*".
+# Discovery stops when gitmatic finds a repo root; nested repos must be included explicitly.
+
+[silent_update]
+# Safest default for most people.
+# gitmatic will:
+#   1) run git fetch --prune --tags
+#   2) fast-forward local tracking branches only when safe
+#   3) never checkout branches
+#   4) skip and log branches currently checked out in any worktree
+include_path = ["/Users/yourname/code"]
+# exclude_path = ["/Users/yourname/code/archive", "*node_modules*"]
+# max_depth = 4
+
+[fetch]
+# Use fetch if you only want to download remote updates and tags.
+# This does not move local branches.
+# include_path = ["/Users/yourname/archive"]
+
+[pull]
+# Use pull only if you explicitly want gitmatic to run normal `git pull`
+# in the matching repositories.
+# include_path = ["/Users/yourname/less-active-projects"]
+
+[ssh_agent]
+# Optional: preload one SSH key into a reusable agent so background runs do not
+# ask for Touch ID / fingerprint approval every single time.
+enabled = false
+# key_path = "~/.ssh/id_ed25519"
+# cache_ttl_seconds = 28800
+# state_dir = "~/.local/state/gitmatic"
+# use_keychain = true
+
+[notifications]
+# Optional: native macOS notifications for unexpected situations.
+enabled = false
+backend = "macos"
+title = "gitmatic"
+# unexpected_statuses = ["FAILED"]
+# unexpected_codes = ["prefetch_failed", "fetch_failed", "pull_failed", "ssh_key_add_failed"]

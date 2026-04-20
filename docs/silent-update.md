@@ -1,8 +1,8 @@
-# Silent update mode (`[SILENT_UPDATE]`)
+# Silent update mode (`[silent_update]`)
 
 ## What this mode does
 
-`[SILENT_UPDATE]` updates **local branches that track an upstream branch** (for example `main` tracking `origin/main`) **without checking out those branches**.
+`[silent_update]` updates **local branches that track an upstream branch** (for example `main` tracking `origin/main`) **without checking out those branches**.
 
 It is designed for background automation where you may be actively working in one or more worktrees.
 
@@ -10,19 +10,19 @@ It is designed for background automation where you may be actively working in on
 
 The implementation intentionally uses high-level Git commands and strict checks:
 
-1. `git fetch --prune --tags`  
+1. `git fetch --prune --tags`
    Refreshes remote-tracking refs first (`origin/*`) so decisions use current data.
 
-2. `git for-each-ref ... refs/heads`  
+2. `git for-each-ref ... refs/heads`
    Lists local branches and their configured upstreams.
 
-3. `git worktree list --porcelain`  
+3. `git worktree list --porcelain`
    Detects branches currently checked out in any worktree.
 
-4. `git merge-base --is-ancestor <local> <upstream>`  
+4. `git merge-base --is-ancestor <local> <upstream>`
    Verifies a fast-forward is possible (no history rewrite).
 
-5. `git branch -f <local> <upstream>`  
+5. `git branch -f <local> <upstream>`
    Moves the local branch ref to upstream **without checkout**.
 
 No `checkout`, `switch`, or merge into the working tree is performed.
@@ -31,7 +31,7 @@ No `checkout`, `switch`, or merge into the working tree is performed.
 
 If a local branch is currently checked out in any worktree, it is **skipped**.
 
-This avoids surprising behavior for users actively editing in that worktree.  
+This avoids surprising behavior for users actively editing in that worktree.
 Every skip is logged with `WARN` and includes the repo+branch.
 
 ## When branches are skipped
@@ -47,5 +47,5 @@ In all of these cases the repository remains unchanged for that branch.
 
 ## Practical note
 
-Use `[SILENT_UPDATE]` for “background keep-local-branches-current” behavior.
-Use `[PULL]` only when you explicitly want working-tree updates on the currently checked-out branch.
+Use `[silent_update]` for "background keep-local-branches-current" behavior.
+Use `[pull]` only when you explicitly want working-tree updates on the currently checked-out branch.
